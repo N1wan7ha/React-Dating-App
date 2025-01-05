@@ -298,9 +298,96 @@ app.get('/users/profiles', authenticateToken, (req, res) => {
 });
 
 
+// Swipe endpoint
+app.post('/users/swipe', authenticateToken, (req, res) => {
+    const { swipedId, action } = req.body;
+    const swiperId = req.user.id;
 
+    // First, insert the swipe action
+    const insertSwipeSql = `
+        INSERT INTO swipes (swiper_id, swiped_id, action)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE action = ?
+    `;
 
+    db.query(insertSwipeSql, [swiperId, swipedId, action, action], (err, result) => {
+        if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: 'Failed to record swipe action' });
+        }
 
+        // If it's a like, check for a match
+        if (action === 'like') {
+            const checkMatchSql = `
+                SELECT * FROM swipes 
+                WHERE swiper_id = ? AND swiped_id = ? 
+                AND action = 'like'
+            `;
+
+            db.query(checkMatchSql, [swipedId, swiperId], (err, results) => {
+                if (err) {
+                    console.error('Database error:', err);
+                    return res.status(500).json({ error: 'Failed to check for match' });
+                }
+
+                // If there's a mutual like, it's a match!
+                const isMatch = results.length > 0;
+
+                res.json({ 
+                    message: 'Swipe recorded successfully',
+                    isMatch: isMatch
+                });
+            });
+        } else {
+            // If it's a dislike, just send success response
+            res.json({ 
+                message: 'Swipe recorded successfully',
+                isMatch: false
+            });
+        }
+    });
+});
+
+// Get matches endpoint 
+app.get('/users/profiles', authenticateToken, (req, res) => {
+    const sql = `
+        SELECT 
+            u.id,
+            CONCAT(u.first_name, ' ', u.last_name) as name,
+            u.age,
+            u.bio,
+            u.interests,
+            u.profile_image as image
+        FROM users u
+        WHERE u.id != ?  -- Exclude the current user
+        AND NOT EXISTS (
+            SELECT 1 
+            FROM swipes s 
+            WHERE s.swiper_id = ? 
+            AND s.swiped_id = u.id
+        )  -- Exclude already swiped profiles
+        ORDER BY RAND()
+        LIMIT 50
+    `;
+
+    db.query(sql, [req.user.id, req.user.id], (err, results) => {
+        if (err) return res.status(500).json({ 
+            error: 'Database error while fetching profiles: ' + err.message 
+        });
+
+        // Format the results
+        const profiles = results.map(profile => ({
+            id: profile.id,
+            name: profile.name,
+            age: profile.age,
+            bio: profile.bio,
+            interests: JSON.parse(profile.interests),
+            image: profile.image ? `http://localhost:${PORT}${profile.image}` : ""
+        }));
+
+        res.status(200).json(profiles);
+    });
+});
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);

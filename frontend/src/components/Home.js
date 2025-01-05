@@ -127,119 +127,166 @@ const Card = ({ data, position, index, active, onSwipe }) => {
 };
 
 const TinderCard = () => {
-    const [cards, setCards] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
+  const [cards, setCards] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [lastFetch, setLastFetch] = useState(null);
 
-    useEffect(() => {
-        fetchProfiles();
-    }, []);
+  useEffect(() => {
+      fetchProfiles();
+  }, []);
 
-    const fetchProfiles = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:5000/users/profiles', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+  const fetchProfiles = async () => {
+      try {
+          setIsLoading(true);
+          const token = localStorage.getItem('token');
+          const response = await fetch('http://localhost:5000/users/profiles', {
+              headers: {
+                  'Authorization': `Bearer ${token}`
+              }
+          });
 
-            if (!response.ok) {
-                throw new Error('Failed to fetch profiles');
-            }
+          if (!response.ok) {
+              throw new Error('Failed to fetch profiles');
+          }
 
-            const data = await response.json();
-            setCards(data);
-            setError(null);
-        } catch (err) {
-            console.error('Error fetching profiles:', err);
-            setError(err.message);
-            setCards([]);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+          const data = await response.json();
+          setCards(data);
+          setLastFetch(new Date());
+          setError(null);
+      } catch (err) {
+          console.error('Error fetching profiles:', err);
+          setError(err.message);
+          setCards([]);
+      } finally {
+          setIsLoading(false);
+      }
+  };
 
-    const handleSwipe = (direction) => {
-        setCards((prevCards) => prevCards.slice(1));
-    };
+  const handleSwipe = async (direction) => {
+      try {
+          const token = localStorage.getItem('token');
+          const currentCard = cards[0];
+          
+          const response = await fetch('http://localhost:5000/users/swipe', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                  swipedId: currentCard.id,
+                  action: direction === 'right' ? 'like' : 'dislike'
+              })
+          });
 
-    const handleUndo = () => {
-        setIsLoading(true);
-        fetchProfiles();
-    };
+          if (!response.ok) {
+              throw new Error('Failed to record swipe action');
+          }
 
-    if (isLoading) {
-        return (
-            <div className="flex-1 flex items-center justify-center">
-                <p className="text-xl text-white">Loading profiles...</p>
-            </div>
-        );
-    }
+          const data = await response.json();
+          
+          if (data.isMatch) {
+              alert(`It's a match with ${currentCard.name}!`);
+          }
+          
+          setCards((prevCards) => prevCards.slice(1));
+          
+      } catch (error) {
+          console.error('Error recording swipe:', error);
+      }
+  };
 
-    if (error) {
-        return (
-            <div className="flex-1 flex items-center justify-center">
-                <p className="text-xl text-white">Error: {error}</p>
-            </div>
-        );
-    }
+  const handleRefresh = () => {
+      // Only allow refresh after 1 hour
+      if (lastFetch && (new Date() - lastFetch) < 3600000) {
+          const minutesLeft = Math.ceil((3600000 - (new Date() - lastFetch)) / 60000);
+          alert(`Please wait ${minutesLeft} minutes before refreshing again.`);
+          return;
+      }
+      fetchProfiles();
+  };
 
-    return (
-        <div className="flex flex-col min-h-screen bg-gradient-to-b from-pink-400 via-purple-400 to-purple-300">
-            <Navbar />
-            
-            <div className="flex-1 flex flex-col items-center justify-center mt-16">
-                <div className="relative w-72 h-96 mb-8">
-                    {cards.map((card, index) => (
-                        <Card
-                            key={card.id}
-                            data={card}
-                            position={{ x: 0, y: 0 }}
-                            index={index}
-                            active={index === 0}
-                            onSwipe={handleSwipe}
+  if (isLoading) {
+      return (
+          <div className="flex-1 flex items-center justify-center">
+              <p className="text-xl text-white">Loading profiles...</p>
+          </div>
+      );
+  }
+
+  if (error) {
+      return (
+          <div className="flex-1 flex items-center justify-center">
+              <p className="text-xl text-white">Error: {error}</p>
+          </div>
+      );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gradient-to-b from-pink-400 via-purple-400 to-purple-300">
+        <Navbar />
+        
+        <div className="flex-1 flex flex-col items-center justify-center mt-16">
+            <div className="relative w-72 h-96 mb-8">
+                {cards.map((card, index) => (
+                    <Card
+                        key={card.id}
+                        data={card}
+                        position={{ x: 0, y: 0 }}
+                        index={index}
+                        active={index === 0}
+                        onSwipe={handleSwipe}
+                    />
+                ))}
+                
+                {cards.length === 0 && !isLoading && !error && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white rounded-2xl shadow-2xl p-6 text-center">
+                        <p className="text-2xl font-bold text-gray-500 mb-2">That's all for now!</p>
+                        <p className="text-gray-400 mb-6">Come back later to discover new people</p>
+                        <img 
+                            src="/api/placeholder/200/200"
+                            alt="No more profiles"
+                            className="w-32 h-32 mb-4 opacity-50"
                         />
-                    ))}
-                    
-                    {cards.length === 0 && !isLoading && !error && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white rounded-2xl shadow-2xl">
-                            <p className="text-2xl font-bold text-gray-500 mb-4">No more profiles!</p>
-                            <button
-                                onClick={handleUndo}
-                                className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-full shadow-lg transition-transform hover:scale-105"
-                            >
-                                Refresh
-                            </button>
-                        </div>
-                    )}
-                </div>
+                        <p className="text-sm text-gray-400">
+                            We'll notify you when new people join
+                        </p>
+                    </div>
+                )}
+            </div>
 
-                <div className="flex gap-6 mb-8">
-                    <button
-                        onClick={() => cards.length > 0 && handleSwipe('left')}
-                        className="p-4 bg-white hover:bg-gray-50 rounded-full text-red-500 shadow-lg transition-transform hover:scale-110"
-                    >
-                        <X className="w-8 h-8" />
-                    </button>
+            <div className="flex gap-6 mb-8">
+                <button
+                    onClick={() => cards.length > 0 && handleSwipe('left')}
+                    className={`p-4 bg-white rounded-full shadow-lg transition-transform hover:scale-110 
+                        ${cards.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 text-red-500'}`}
+                    disabled={cards.length === 0}
+                >
+                    <X className="w-8 h-8" />
+                </button>
 
-                    <button
-                        onClick={handleUndo}
-                        className="p-4 bg-white hover:bg-gray-50 rounded-full text-purple-500 shadow-lg transition-transform hover:scale-110"
-                    >
-                        <RotateCcw className="w-8 h-8" />
-                    </button>
+                {/* <button
+                    onClick={handleUndo}
+                    className={`p-4 bg-white rounded-full shadow-lg transition-transform hover:scale-110 
+                        ${cards.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 text-purple-500'}`}
+                    disabled={cards.length === 0}
+                >
+                    <RotateCcw className="w-8 h-8" />
+                </button> */}
 
-                    <button
-                        onClick={() => cards.length > 0 && handleSwipe('right')}
-                        className="p-4 bg-white hover:bg-gray-50 rounded-full text-green-500 shadow-lg transition-transform hover:scale-110"
-                    >
-                        <Heart className="w-8 h-8" />
-                    </button>
-                </div>
+                <button
+                    onClick={() => cards.length > 0 && handleSwipe('right')}
+                    className={`p-4 bg-white rounded-full shadow-lg transition-transform hover:scale-110 
+                        ${cards.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 text-green-500'}`}
+                    disabled={cards.length === 0}
+                >
+                    <Heart className="w-8 h-8" />
+                </button>
             </div>
         </div>
-    );
+    </div>
+);
 };
 
 export default TinderCard;
